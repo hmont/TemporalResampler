@@ -166,17 +166,25 @@ public class TemporalResampler : AsyncPositionedPipelineElement<IDeviceReport>
 
         // smoothing
         float smoothingWeight = MathF.Exp(msAvg / -latency);
-        if (latency > 0f) 
+        if (latency > 0f)
         {
             smoothed += (sC - smoothed) * smoothingWeight;
-            sPressure += (sPressure - pressure) * smoothingWeight;
+
+            if (pressure > 0)
+                sPressure += (pressure - sPressure) * smoothingWeight;
+            else
+                sPressure = pressure;
+        }
+        else
+        {
+            sPressure = pressure;
         }
         sC = smoothed;
         InsertAtFirst(smoothedPoints, smoothed);
 
         // prediction
         Vector2 predict = smoothedPoints[0];
-        if (frameShift > 0f) 
+        if (frameShift > 0f)
         {
             predict = kf.Update(smoothedPoints[0], secAvg);
             float predictCoe = (followUnits > 0f) ? Math.Clamp(Vector2.Distance(smoothedPoints[0], smoothedPoints[2]) / followUnits - 1f, 0, 1) : 1f;
@@ -195,6 +203,7 @@ public class TemporalResampler : AsyncPositionedPipelineElement<IDeviceReport>
         tOffset *= MathF.Exp(-5f * consumeDelta);
         tOffset = Math.Clamp(tOffset, -secAvg, secAvg);
         latestReport = runningStopwatch.Elapsed + TimeSpan.FromSeconds(tOffset);
+        Log.Write("TEMPORAL", "sPressure: " + sPressure.ToString());
         InsertAtFirst(stablePoints, new object[] { predict, (uint)sPressure });
 
         // miscellaneous
@@ -276,7 +285,7 @@ public class TemporalResampler : AsyncPositionedPipelineElement<IDeviceReport>
         var mid = 0.5f * (v1 + v3);
         var accel = 2f * (mid - v2);
         var vel = 2f * v2 - v3 - mid;
-        
+
         // if there is acceleration, then start spacing points evenly using integrals
         if (Vector2.Dot(accel, accel) > 0.001f)
         {
@@ -382,14 +391,14 @@ public class KalmanFilter
         var z = Matrix.Build.DenseOfArray(new double[,] { { measuredPos }, { measuredVel } });
 
         double[,] Aarr = new double[states, states];
-        for (int i = 0; i < states; i++) 
+        for (int i = 0; i < states; i++)
         {
             double time_pow = 1;
-            for (int j = i; j < states; j++) 
+            for (int j = i; j < states; j++)
             {
                 Aarr[i, j] = time_pow * scale_const[i, j];
                 time_pow *= dt;
-            } 
+            }
         }
 
         /*
